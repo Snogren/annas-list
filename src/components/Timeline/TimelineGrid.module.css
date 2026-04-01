@@ -1,0 +1,41 @@
+.grid {
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+  cursor: default;
+  background: var(--bg);
+}
+
+.hourLine {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+
+.dayLine {
+  background: var(--border-strong);
+  width: 2px;
+}
+
+.nowNeedle {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: #ef4444;
+  pointer-events: none;
+  z-index: 30;
+}
+
+.nowDot {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+}

@@ -1,0 +1,190 @@
+.block {
+  position: absolute;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--task-color) 20%, var(--surface));
+  border: 1.5px solid var(--task-color);
+  display: flex;
+  align-items: center;
+  cursor: default;
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: opacity 0.1s, box-shadow 0.1s;
+  touch-action: none;
+}
+
+.block:hover {
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--task-color) 40%, transparent);
+  z-index: 10;
+}
+
+.block.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+.block.preview {
+  opacity: 0.95;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--task-color) 50%, transparent);
+  z-index: 20;
+  cursor: grabbing;
+  pointer-events: none;
+}
+
+/* Drag grip */
+.grip {
+  flex-shrink: 0;
+  width: 14px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  color: var(--task-color);
+  padding: 0 1px;
+}
+
+.grip:active {
+  cursor: grabbing;
+}
+
+/* Title */
+.title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--task-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 6px;
+  cursor: text;
+  min-width: 0;
+}
+
+.titleInput {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--task-color);
+  background: color-mix(in srgb, var(--task-color) 12%, var(--surface));
+  border: 1px solid var(--task-color);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin: 0 4px;
+  outline: none;
+  min-width: 0;
+  font-family: inherit;
+}
+
+/* Inline action buttons (shown when block is wide enough) */
+.inlineActions {
+  display: none;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+  padding-right: 4px;
+}
+
+.block:hover .inlineActions {
+  display: flex;
+}
+
+/* Tooltip action buttons */
+.tooltipActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Shared button style */
+.actionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--task-color, var(--text-muted));
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.actionBtn:hover {
+  background: color-mix(in srgb, var(--task-color, currentColor) 20%, transparent);
+}
+
+.actionBtnActive {
+  color: #ef4444 !important;
+}
+
+.deleteBtn {
+  color: var(--text-muted);
+}
+
+.deleteBtn:hover {
+  color: #ef4444;
+  background: color-mix(in srgb, #ef4444 15%, transparent);
+}
+
+/* Resize handles */
+.resizeLeft,
+.resizeRight {
+  flex-shrink: 0;
+  width: 8px;
+  height: 100%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.resizeLeft::before,
+.resizeRight::before {
+  content: '';
+  width: 2px;
+  height: 14px;
+  background: var(--task-color);
+  border-radius: 1px;
+  opacity: 0.4;
+}
+
+.resizeLeft {
+  cursor: w-resize;
+}
+
+.resizeRight {
+  cursor: e-resize;
+}
+
+/* Tooltip (portal, fixed position) */
+.tooltip {
+  position: fixed;
+  transform: translateX(-50%) translateY(calc(-100% - 8px));
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  padding: 4px 5px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  pointer-events: auto;
+}
+
+.tooltipArrow {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 8px;
+  background: var(--surface);
+  border-right: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-strong);
+  rotate: 45deg;
+}
