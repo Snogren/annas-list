@@ -71,6 +71,3 @@ src/
 └── index.css            # Global styles
 ```
 
-## License
-
-MIT
