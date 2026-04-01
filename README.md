@@ -51,18 +51,6 @@ npm run build
 npm run preview
 ```
 
-## Deployment
-
-### Deploy to Vercel
-
-1. Push your code to GitHub
-2. Go to [vercel.com](https://vercel.com) and sign in
-3. Click "Add New..." → "Project"
-4. Import your repository
-5. Click "Deploy"
-
-Vercel auto-detects Vite and handles the build automatically.
-
 ## Project Structure
 
 ```
