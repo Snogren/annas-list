@@ -1,16 +1,33 @@
 export type TaskId = string;
+export type SessionId = string;
 export type TimeLogId = string;
+export type CommentId = string;
+
+export interface Comment {
+  id: CommentId;
+  taskId: TaskId;
+  body: string;
+  createdAt: number;
+  updatedAt: number;
+}
 
 export interface Task {
   id: TaskId;
   title: string;
   description?: string;
   color: string;
-  startTime: number; // Unix timestamp ms
-  durationMs: number;
+  done: boolean;
   tags: string[];
   createdAt: number;
   updatedAt: number;
+}
+
+export interface Session {
+  id: SessionId;
+  taskId: TaskId;
+  startTime: number; // Unix timestamp ms
+  durationMs: number;
+  createdAt: number;
 }
 
 export type TimeLogKind = 'task' | 'unlogged' | 'life' | 'distracted';
@@ -28,7 +45,7 @@ export type SnapInterval = 'none' | '5min' | '15min' | '30min' | '1hr';
 
 export interface Settings {
   snapInterval: SnapInterval;
-  defaultTaskDurationMs: number;
+  defaultSessionDurationMs: number;
 }
 
 export interface UIState {
@@ -39,25 +56,15 @@ export interface UIState {
   modalOpen: 'edit' | 'log' | null;
 }
 
-export type RecurringTaskId = string;
-
-export interface RecurringTask {
-  id: RecurringTaskId;
-  title: string;
-  color: string;
-  defaultDurationMs: number;
-  createdAt: number;
-}
-
 export interface PanelDrag {
-  recurringTaskId: RecurringTaskId;
+  taskId: TaskId;
   x: number;
   y: number;
 }
 
 export interface DragPreview {
-  taskId: TaskId;
-  type: 'move' | 'resize-left' | 'resize-right';
+  sessionId: SessionId;
+  type: 'move' | 'resize-top' | 'resize-bottom';
   originalStartTime: number;
   originalDurationMs: number;
   currentStartTime: number;

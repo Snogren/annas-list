@@ -1,16 +1,22 @@
-import type { Task, TaskId } from '../types';
+import type { SessionId } from '../types';
 
-export function assignLanes(tasks: Task[]): Map<TaskId, number> {
-  const sorted = [...tasks].sort((a, b) => a.startTime - b.startTime);
+interface Slottable {
+  id: string;
+  startTime: number;
+  durationMs: number;
+}
+
+export function assignLanes(items: Slottable[]): Map<SessionId, number> {
+  const sorted = [...items].sort((a, b) => a.startTime - b.startTime);
   const laneEndTimes: number[] = [];
-  const result = new Map<TaskId, number>();
+  const result = new Map<string, number>();
 
-  for (const task of sorted) {
-    const endTime = task.startTime + task.durationMs;
-    const freeLane = laneEndTimes.findIndex((t) => t <= task.startTime);
+  for (const item of sorted) {
+    const endTime = item.startTime + item.durationMs;
+    const freeLane = laneEndTimes.findIndex((t) => t <= item.startTime);
     const lane = freeLane === -1 ? laneEndTimes.length : freeLane;
     laneEndTimes[lane] = endTime;
-    result.set(task.id, lane);
+    result.set(item.id, lane);
   }
   return result;
 }

@@ -1,20 +1,34 @@
 .block {
   position: absolute;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--task-color) 20%, var(--surface));
+  background: color-mix(in srgb, var(--task-color) 18%, var(--surface));
   border: 1.5px solid var(--task-color);
   display: flex;
-  align-items: center;
+  flex-direction: column;
   cursor: default;
   box-sizing: border-box;
   overflow: hidden;
-  transition: opacity 0.1s, box-shadow 0.1s;
+  transition: box-shadow 0.1s, opacity 0.1s;
   touch-action: none;
 }
 
 .block:hover {
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--task-color) 40%, transparent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--task-color) 35%, transparent);
   z-index: 10;
+}
+
+.block.selected {
+  border-color: var(--task-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--task-color) 50%, transparent);
+  z-index: 11;
+}
+
+.block.done {
+  opacity: 0.55;
+}
+
+.block.done .title {
+  text-decoration: line-through;
 }
 
 .block.dragging {
@@ -23,42 +37,38 @@
 }
 
 .block.preview {
-  opacity: 0.95;
+  opacity: 0.92;
   box-shadow: 0 4px 16px color-mix(in srgb, var(--task-color) 50%, transparent);
   z-index: 20;
   cursor: grabbing;
   pointer-events: none;
 }
 
-/* Drag grip */
-.grip {
-  flex-shrink: 0;
-  width: 14px;
-  height: 100%;
+/* Draggable body area */
+.body {
+  flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  padding: 4px 8px;
   cursor: grab;
-  color: var(--task-color);
-  padding: 0 1px;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.grip:active {
+.body:active {
   cursor: grabbing;
 }
 
 /* Title */
 .title {
-  flex: 1;
   font-size: 12px;
   font-weight: 500;
   color: var(--task-color);
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 0 6px;
-  cursor: text;
-  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  user-select: none;
 }
 
 .titleInput {
@@ -70,121 +80,151 @@
   border: 1px solid var(--task-color);
   border-radius: 3px;
   padding: 1px 5px;
-  margin: 0 4px;
   outline: none;
-  min-width: 0;
+  width: 100%;
   font-family: inherit;
+  box-sizing: border-box;
 }
 
-/* Inline action buttons (shown when block is wide enough) */
-.inlineActions {
-  display: none;
-  align-items: center;
-  gap: 1px;
-  flex-shrink: 0;
-  padding-right: 4px;
-}
-
-.block:hover .inlineActions {
-  display: flex;
-}
-
-/* Tooltip action buttons */
-.tooltipActions {
+/* Action row */
+.actions {
   display: flex;
   align-items: center;
   gap: 2px;
+  padding: 0 6px 4px;
+  flex-shrink: 0;
 }
 
-/* Shared button style */
 .actionBtn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
+  gap: 4px;
+  padding: 3px 6px;
   border-radius: 4px;
   border: none;
   background: transparent;
   color: var(--task-color, var(--text-muted));
   cursor: pointer;
-  padding: 0;
-  transition: background 0.1s, color 0.1s;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: inherit;
+  transition: background 0.1s;
   flex-shrink: 0;
 }
 
 .actionBtn:hover {
-  background: color-mix(in srgb, var(--task-color, currentColor) 20%, transparent);
+  background: color-mix(in srgb, var(--task-color, currentColor) 18%, transparent);
 }
 
 .actionBtnActive {
   color: #ef4444 !important;
 }
 
+.unscheduleBtn {
+  color: var(--text-muted);
+}
+
+.unscheduleBtn:hover {
+  color: var(--task-color);
+  background: color-mix(in srgb, var(--task-color) 12%, transparent);
+}
+
 .deleteBtn {
   color: var(--text-muted);
+  margin-left: auto;
 }
 
 .deleteBtn:hover {
   color: #ef4444;
-  background: color-mix(in srgb, #ef4444 15%, transparent);
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+}
+
+/* Tooltip actions (shown on hover when block is too short for action row) */
+.tooltipActions {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 3px 4px;
+  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  z-index: 50;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  white-space: nowrap;
+}
+
+.block:hover .tooltipActions {
+  display: flex;
+}
+
+.tooltipBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.tooltipBtn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.tooltipBtnLogging {
+  color: #ef4444;
+}
+
+.tooltipBtnLogging:hover {
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+}
+
+.tooltipBtnUnschedule:hover {
+  color: var(--task-color);
+  background: color-mix(in srgb, var(--task-color) 12%, transparent);
+}
+
+.tooltipBtnDelete:hover {
+  color: #ef4444;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
 }
 
 /* Resize handles */
-.resizeLeft,
-.resizeRight {
+.resizeTop,
+.resizeBottom {
   flex-shrink: 0;
-  width: 8px;
-  height: 100%;
+  height: 6px;
+  width: 100%;
   z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.resizeLeft::before,
-.resizeRight::before {
+.resizeTop::before,
+.resizeBottom::before {
   content: '';
-  width: 2px;
-  height: 14px;
+  height: 2px;
+  width: 20px;
   background: var(--task-color);
   border-radius: 1px;
-  opacity: 0.4;
+  opacity: 0.35;
 }
 
-.resizeLeft {
-  cursor: w-resize;
+.resizeTop {
+  cursor: n-resize;
 }
 
-.resizeRight {
-  cursor: e-resize;
-}
-
-/* Tooltip (portal, fixed position) */
-.tooltip {
-  position: fixed;
-  transform: translateX(-50%) translateY(calc(-100% - 8px));
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 7px;
-  padding: 4px 5px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  pointer-events: auto;
-}
-
-.tooltipArrow {
-  position: absolute;
-  bottom: -5px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 8px;
-  height: 8px;
-  background: var(--surface);
-  border-right: 1px solid var(--border-strong);
-  border-bottom: 1px solid var(--border-strong);
-  rotate: 45deg;
+.resizeBottom {
+  cursor: s-resize;
 }

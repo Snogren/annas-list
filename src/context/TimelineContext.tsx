@@ -3,12 +3,12 @@ import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../store/useAppStore';
 
 interface TimelineContextValue {
-  timestampToX: (ts: number) => number;
-  xToTimestamp: (x: number) => number;
-  msToWidth: (ms: number) => number;
-  widthToMs: (w: number) => number;
+  timestampToY: (ts: number) => number;
+  yToTimestamp: (y: number) => number;
+  msToPx: (ms: number) => number;
+  pxToMs: (px: number) => number;
   visibleStartTime: () => number;
-  visibleEndTime: (viewportWidth: number) => number;
+  visibleEndTime: (viewportHeight: number) => number;
 }
 
 const TimelineContext = createContext<TimelineContextValue | null>(null);
@@ -23,13 +23,13 @@ export function TimelineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo<TimelineContextValue>(() => ({
-    timestampToX: (ts) => (ts - anchorTime) * pxPerMs - scrollOffsetPx,
-    xToTimestamp: (x) => anchorTime + (x + scrollOffsetPx) / pxPerMs,
-    msToWidth: (ms) => ms * pxPerMs,
-    widthToMs: (w) => w / pxPerMs,
+    timestampToY: (ts) => (ts - anchorTime) * pxPerMs - scrollOffsetPx,
+    yToTimestamp: (y) => anchorTime + (y + scrollOffsetPx) / pxPerMs,
+    msToPx: (ms) => ms * pxPerMs,
+    pxToMs: (px) => px / pxPerMs,
     visibleStartTime: () => anchorTime + scrollOffsetPx / pxPerMs,
-    visibleEndTime: (viewportWidth) =>
-      anchorTime + (scrollOffsetPx + viewportWidth) / pxPerMs,
+    visibleEndTime: (viewportHeight) =>
+      anchorTime + (scrollOffsetPx + viewportHeight) / pxPerMs,
   }), [anchorTime, pxPerMs, scrollOffsetPx]);
 
   return (

@@ -117,13 +117,13 @@ export function Toolbar({ panelOpen, onTogglePanel, sidebarOpen, onToggleSidebar
   const activeKind: TimeLogKind | null = activeLog?.kind ?? null;
 
   const goToNow = useCallback(() => {
-    const vw = window.innerWidth;
-    const offset = (Date.now() - ui.anchorTime) * ui.pxPerMs - vw / 2;
+    const vh = window.innerHeight;
+    const offset = (Date.now() - ui.anchorTime) * ui.pxPerMs - vh / 2;
     setScrollOffset(offset);
   }, [ui.anchorTime, ui.pxPerMs, setScrollOffset]);
 
   const addTask = useCallback(() => {
-    createTask({ startTime: Date.now() });
+    createTask();
   }, [createTask]);
 
   return (

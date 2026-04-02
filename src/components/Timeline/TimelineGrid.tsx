@@ -1,10 +1,12 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { eachHourOfInterval, getHours } from 'date-fns';
+import { eachHourOfInterval } from 'date-fns';
 import { useTimeline } from '../../context/TimelineContext';
 import { useAppStore, snapTime } from '../../store/useAppStore';
 import { assignLanes } from '../../utils/layoutUtils';
-import { TaskBlock, LANE_HEIGHT } from '../Task/TaskBlock';
+import { TaskBlock } from '../Task/TaskBlock';
+
+const MIN_LANE_WIDTH = 120;
 import styles from './TimelineGrid.module.css';
 
 const NOW_NEEDLE_INTERVAL = 30 * 1000;
@@ -12,31 +14,35 @@ const PANEL_GHOST_ID = '__panel_ghost__';
 
 export function TimelineGrid() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(window.innerWidth);
+  const [height, setHeight] = useState(window.innerHeight);
+  const [width, setWidth] = useState(0);
   const [now, setNow] = useState(Date.now());
 
-  const { timestampToX, xToTimestamp, visibleStartTime, visibleEndTime } = useTimeline();
+  const { timestampToY, yToTimestamp, visibleStartTime, visibleEndTime } = useTimeline();
   const {
-    tasks, dragPreview, panelDrag, recurringTasks,
-    setScrollOffset, setZoom, createTask, setPanelDrag,
+    tasks, sessions, dragPreview, panelDrag,
+    createTask, scheduleTask, openModal, setPanelDrag, closeModal,
   } = useAppStore(
     useShallow((s) => ({
       tasks: s.tasks,
+      sessions: s.sessions,
       dragPreview: s.dragPreview,
       panelDrag: s.panelDrag,
-      recurringTasks: s.recurringTasks,
-      setScrollOffset: s.setScrollOffset,
-      setZoom: s.setZoom,
       createTask: s.createTask,
+      scheduleTask: s.scheduleTask,
+      openModal: s.openModal,
       setPanelDrag: s.setPanelDrag,
+      closeModal: s.closeModal,
     }))
   );
-  const scrollOffsetPx = useAppStore((s) => s.ui.scrollOffsetPx);
-  const pxPerMs = useAppStore((s) => s.ui.pxPerMs);
   const snapInterval = useAppStore((s) => s.settings.snapInterval);
+  const defaultDurationMs = useAppStore((s) => s.settings.defaultSessionDurationMs);
 
   useEffect(() => {
-    const obs = new ResizeObserver((entries) => setWidth(entries[0].contentRect.width));
+    const obs = new ResizeObserver((entries) => {
+      setHeight(entries[0].contentRect.height);
+      setWidth(entries[0].contentRect.width);
+    });
     if (containerRef.current) obs.observe(containerRef.current);
     return () => obs.disconnect();
   }, []);
@@ -45,25 +51,6 @@ export function TimelineGrid() {
     const interval = setInterval(() => setNow(Date.now()), NOW_NEEDLE_INTERVAL);
     return () => clearInterval(interval);
   }, []);
-
-  // Scroll/zoom
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      if (e.ctrlKey || e.metaKey) {
-        const zoomFactor = e.deltaY > 0 ? 0.85 : 1.18;
-        const rect = el.getBoundingClientRect();
-        setZoom(pxPerMs * zoomFactor, e.clientX - rect.left);
-      } else {
-        const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-        setScrollOffset(scrollOffsetPx + delta);
-      }
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [scrollOffsetPx, pxPerMs, setScrollOffset, setZoom]);
 
   // Panel drag drop handler
   useEffect(() => {
@@ -76,17 +63,12 @@ export function TimelineGrid() {
         e.clientX >= rect.left && e.clientX <= rect.right &&
         e.clientY >= rect.top  && e.clientY <= rect.bottom
       ) {
-        const template = recurringTasks[panelDrag.recurringTaskId];
-        if (template) {
-          const relX = e.clientX - rect.left;
-          const rawTs = xToTimestamp(relX);
+        const task = tasks[panelDrag.taskId];
+        if (task) {
+          const relY = e.clientY - rect.top;
+          const rawTs = yToTimestamp(relY);
           const startTime = snapTime(rawTs, snapInterval);
-          createTask({
-            title: template.title,
-            color: template.color,
-            durationMs: template.defaultDurationMs,
-            startTime,
-          });
+          scheduleTask(panelDrag.taskId, startTime, defaultDurationMs);
         }
       }
       setPanelDrag(null);
@@ -94,50 +76,72 @@ export function TimelineGrid() {
 
     window.addEventListener('pointerup', onPanelDrop);
     return () => window.removeEventListener('pointerup', onPanelDrop);
-  }, [panelDrag, recurringTasks, xToTimestamp, snapInterval, createTask, setPanelDrag]);
+  }, [panelDrag, tasks, yToTimestamp, snapInterval, defaultDurationMs, scheduleTask, setPanelDrag]);
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       const rect = containerRef.current!.getBoundingClientRect();
-      const ts = xToTimestamp(e.clientX - rect.left);
-      createTask({ startTime: ts });
+      const rawTs = yToTimestamp(e.clientY - rect.top);
+      const startTime = snapTime(rawTs, snapInterval);
+
+      const ONE_HOUR = 60 * 60 * 1000;
+      const MIN_GAP = 15 * 60 * 1000;
+
+      // Find the nearest session that starts after this one
+      const nextStart = Object.values(sessions)
+        .map((s) => s.startTime)
+        .filter((t) => t > startTime)
+        .sort((a, b) => a - b)[0];
+
+      const gapMs = nextStart !== undefined ? nextStart - startTime : Infinity;
+      const durationMs = gapMs < MIN_GAP ? ONE_HOUR : Math.min(ONE_HOUR, gapMs);
+
+      const taskId = createTask();
+      scheduleTask(taskId, startTime, durationMs);
+      openModal('edit', taskId);
     },
-    [xToTimestamp, createTask]
+    [yToTimestamp, snapInterval, sessions, createTask, scheduleTask, openModal]
   );
 
-  const taskList = Object.values(tasks);
+  // Single click on empty grid area deselects
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if ((e.target as HTMLElement) === containerRef.current) closeModal();
+    },
+    [closeModal]
+  );
 
-  // Build panel ghost task if dragging over the grid
+  const sessionList = Object.values(sessions);
+
+  // Build panel ghost session if dragging over the grid
   const rect = containerRef.current?.getBoundingClientRect();
-  const panelGhostTask = (() => {
+  const panelGhostSession = (() => {
     if (!panelDrag || !rect) return null;
     if (
       panelDrag.x < rect.left || panelDrag.x > rect.right ||
       panelDrag.y < rect.top  || panelDrag.y > rect.bottom
     ) return null;
-    const template = recurringTasks[panelDrag.recurringTaskId];
-    if (!template) return null;
-    const relX = panelDrag.x - rect.left;
-    const startTime = snapTime(xToTimestamp(relX), snapInterval);
+    const task = tasks[panelDrag.taskId];
+    if (!task) return null;
+    const relY = panelDrag.y - rect.top;
+    const startTime = snapTime(yToTimestamp(relY), snapInterval);
     return {
       id: PANEL_GHOST_ID,
-      title: template.title,
-      color: template.color,
+      taskId: panelDrag.taskId,
       startTime,
-      durationMs: template.defaultDurationMs,
-      tags: [] as string[],
+      durationMs: defaultDurationMs,
       createdAt: 0,
-      updatedAt: 0,
     };
   })();
 
-  const allTasksForLanes = panelGhostTask ? [...taskList, panelGhostTask] : taskList;
-  const lanes = assignLanes(allTasksForLanes);
+  const allSessionsForLanes = panelGhostSession ? [...sessionList, panelGhostSession] : sessionList;
+  const lanes = assignLanes(allSessionsForLanes);
   const maxLane = Math.max(0, ...Array.from(lanes.values()));
-  const gridHeight = Math.max(300, (maxLane + 2) * LANE_HEIGHT);
+  const laneCount = maxLane + 1;
+  const laneWidth = Math.max(MIN_LANE_WIDTH, width / laneCount);
 
   const startTs = visibleStartTime();
-  const endTs = visibleEndTime(width);
+  const endTs = visibleEndTime(height);
   const hourMs = 60 * 60 * 1000;
 
   const hours = eachHourOfInterval({
@@ -145,60 +149,68 @@ export function TimelineGrid() {
     end: new Date(endTs + hourMs),
   });
 
-  const visibleTasks = taskList.filter(
-    (t) => t.startTime < endTs && t.startTime + t.durationMs > startTs
+  const visibleSessions = sessionList.filter(
+    (s) => s.startTime < endTs && s.startTime + s.durationMs > startTs
   );
 
-  const nowX = timestampToX(now);
-  const nowVisible = nowX >= -4 && nowX <= width + 4;
+  const nowY = timestampToY(now);
+  const nowVisible = nowY >= -4 && nowY <= height + 4;
 
-  const previewTask = dragPreview
-    ? { ...tasks[dragPreview.taskId], startTime: dragPreview.currentStartTime, durationMs: dragPreview.currentDurationMs }
+  const previewSession = dragPreview
+    ? { ...sessions[dragPreview.sessionId], startTime: dragPreview.currentStartTime, durationMs: dragPreview.currentDurationMs }
     : null;
 
   return (
     <div
       ref={containerRef}
       className={styles.grid}
-      style={{ height: gridHeight }}
+      onClick={handleClick}
       onDoubleClick={handleDoubleClick}
     >
       {hours.map((hour) => {
-        const x = timestampToX(hour.getTime());
-        if (x < -2 || x > width + 2) return null;
+        const y = timestampToY(hour.getTime());
+        if (y < -2 || y > height + 2) return null;
         return (
           <div
             key={hour.getTime()}
-            className={`${styles.hourLine} ${getHours(hour) === 0 ? styles.dayLine : ''}`}
-            style={{ left: x, height: gridHeight }}
+            className={`${styles.hourLine} ${hour.getHours() === 0 ? styles.dayLine : ''}`}
+            style={{ top: y }}
           />
         );
       })}
 
-      {visibleTasks.map((task) => (
-        <TaskBlock key={task.id} task={task} lane={lanes.get(task.id) ?? 0} />
-      ))}
+      {visibleSessions.map((session) => {
+        const task = tasks[session.taskId];
+        if (!task) return null;
+        return (
+          <TaskBlock key={session.id} session={session} task={task} lane={lanes.get(session.id) ?? 0} laneWidth={laneWidth} />
+        );
+      })}
 
-      {previewTask && dragPreview && (
+      {previewSession && dragPreview && sessions[dragPreview.sessionId] && (
         <TaskBlock
-          key={`preview-${dragPreview.taskId}`}
-          task={previewTask}
-          lane={lanes.get(dragPreview.taskId) ?? 0}
+          key={`preview-${dragPreview.sessionId}`}
+          session={previewSession}
+          task={tasks[sessions[dragPreview.sessionId].taskId]}
+          lane={lanes.get(dragPreview.sessionId) ?? 0}
+          laneWidth={laneWidth}
           isPreview
         />
       )}
 
-      {panelGhostTask && (
+      {panelGhostSession && tasks[panelGhostSession.taskId] && (
         <TaskBlock
           key={PANEL_GHOST_ID}
-          task={panelGhostTask}
+          session={panelGhostSession}
+          task={tasks[panelGhostSession.taskId]}
           lane={lanes.get(PANEL_GHOST_ID) ?? 0}
+          laneWidth={laneWidth}
           isPreview
         />
       )}
 
       {nowVisible && (
-        <div className={styles.nowNeedle} style={{ left: nowX }}>
+        <div className={styles.nowNeedle} style={{ top: nowY }}>
           <div className={styles.nowDot} />
         </div>
       )}

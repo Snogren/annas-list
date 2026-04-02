@@ -37,6 +37,49 @@ html, body, #root {
   overflow: hidden;
 }
 
+.leftCol {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.leftColPanels {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+
+.resizeHandle {
+  width: 4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  z-index: 10;
+}
+
+.resizeHandle:hover,
+.resizeHandle.resizing {
+  background: var(--accent);
+}
+
+.resizeHandleH {
+  height: 4px;
+  flex-shrink: 0;
+  cursor: row-resize;
+  background: transparent;
+  transition: background 0.15s;
+  z-index: 10;
+}
+
+.resizeHandleH:hover,
+.resizeHandleH.resizing {
+  background: var(--accent);
+}
+
 input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   filter: invert(1);
 }

@@ -4,11 +4,13 @@ import { startOfToday } from 'date-fns';
 import type {
   Task,
   TaskId,
+  Session,
+  SessionId,
   TimeLog,
   TimeLogId,
   TimeLogKind,
-  RecurringTask,
-  RecurringTaskId,
+  Comment,
+  CommentId,
   PanelDrag,
   UIState,
   Settings,
@@ -21,8 +23,13 @@ const TASK_COLORS = [
   '#f97316', '#eab308', '#22c55e', '#06b6d4',
 ];
 
-function randomColor() {
-  return TASK_COLORS[Math.floor(Math.random() * TASK_COLORS.length)];
+function pickColor(usedColors: string[]): string {
+  // Find a color not currently in use; fall back to least-used
+  const unused = TASK_COLORS.find((c) => !usedColors.includes(c));
+  if (unused) return unused;
+  // All colors in use — pick the one used least
+  const counts = TASK_COLORS.map((c) => usedColors.filter((u) => u === c).length);
+  return TASK_COLORS[counts.indexOf(Math.min(...counts))];
 }
 
 function nanoid() {
@@ -49,8 +56,9 @@ export const PX_PER_MS = PX_PER_HOUR / (60 * 60 * 1000);
 interface AppStore {
   // Persisted
   tasks: Record<TaskId, Task>;
+  sessions: Record<SessionId, Session>;
   timeLogs: Record<TimeLogId, TimeLog>;
-  recurringTasks: Record<RecurringTaskId, RecurringTask>;
+  comments: Record<CommentId, Comment>;
   settings: Settings;
 
   // Ephemeral
@@ -59,13 +67,16 @@ interface AppStore {
   panelDrag: PanelDrag | null;
 
   // Task actions
-  createTask: (patch?: Partial<Task>) => TaskId;
+  createTask: (patch?: Partial<Pick<Task, 'title' | 'color' | 'description'>>) => TaskId;
   updateTask: (id: TaskId, patch: Partial<Task>) => void;
   deleteTask: (id: TaskId) => void;
 
+  // Session actions
+  scheduleTask: (taskId: TaskId, startTime: number, durationMs: number) => SessionId;
+  updateSession: (id: SessionId, patch: Partial<Pick<Session, 'startTime' | 'durationMs'>>) => void;
+  unscheduleSession: (id: SessionId) => void;
+
   // Time log actions
-  // Stops the currently active log (if any) and starts a new one.
-  // taskId=null + kind='unlogged'|'life'|'distracted' for non-task periods.
   startTimeLog: (taskId: TaskId | null, kind?: TimeLogKind) => TimeLogId;
   stopCurrentLog: () => void;
   deleteTimeLog: (id: TimeLogId) => void;
@@ -74,7 +85,7 @@ interface AppStore {
 
   // UI actions
   setScrollOffset: (px: number) => void;
-  setZoom: (pxPerMs: number, cursorViewportX?: number) => void;
+  setZoom: (pxPerMs: number, cursorViewportOffset?: number) => void;
   openModal: (type: 'edit' | 'log', taskId: TaskId) => void;
   closeModal: () => void;
 
@@ -82,32 +93,34 @@ interface AppStore {
   setDragPreview: (preview: DragPreview | null) => void;
   commitDragPreview: () => void;
 
-  // Panel drag (template → timeline)
+  // Panel drag (staging → timeline)
   setPanelDrag: (drag: PanelDrag | null) => void;
 
-  // Recurring task actions
-  createRecurringTask: (patch?: Partial<RecurringTask>) => RecurringTaskId;
-  updateRecurringTask: (id: RecurringTaskId, patch: Partial<RecurringTask>) => void;
-  deleteRecurringTask: (id: RecurringTaskId) => void;
+  // Comment actions
+  addComment: (taskId: TaskId, body: string) => CommentId;
+  updateComment: (id: CommentId, body: string) => void;
+  deleteComment: (id: CommentId) => void;
 
   // Settings
   updateSettings: (patch: Partial<Settings>) => void;
 }
 
 const anchorTime = startOfToday().getTime();
+const initialScrollOffsetPx = Math.max(0, (Date.now() - anchorTime) * PX_PER_MS - 400);
 
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
       tasks: {},
+      sessions: {},
       timeLogs: {},
-      recurringTasks: {},
+      comments: {},
       settings: {
         snapInterval: '15min',
-        defaultTaskDurationMs: 60 * 60 * 1000,
+        defaultSessionDurationMs: 60 * 60 * 1000,
       },
       ui: {
-        scrollOffsetPx: 0,
+        scrollOffsetPx: initialScrollOffsetPx,
         anchorTime,
         pxPerMs: PX_PER_MS,
         selectedTaskId: null,
@@ -119,12 +132,12 @@ export const useAppStore = create<AppStore>()(
       createTask: (patch = {}) => {
         const id = nanoid();
         const now = Date.now();
+        const usedColors = Object.values(get().tasks).map((t) => t.color);
         const task: Task = {
           id,
           title: 'New Task',
-          color: randomColor(),
-          startTime: snapTime(now, get().settings.snapInterval),
-          durationMs: get().settings.defaultTaskDurationMs,
+          color: pickColor(usedColors),
+          done: false,
           tags: [],
           createdAt: now,
           updatedAt: now,
@@ -148,23 +161,54 @@ export const useAppStore = create<AppStore>()(
           (l) => l.taskId === id && l.endTime === null
         );
         set((s) => {
-          const { [id]: _, ...rest } = s.tasks;
-          // Remove all logs for this task (they become orphaned)
+          const { [id]: _, ...tasks } = s.tasks;
           const timeLogs = Object.fromEntries(
             Object.entries(s.timeLogs).filter(([, l]) => l.taskId !== id)
           );
-          return { tasks: rest, timeLogs };
+          const sessions = Object.fromEntries(
+            Object.entries(s.sessions).filter(([, sess]) => sess.taskId !== id)
+          );
+          const comments = Object.fromEntries(
+            Object.entries(s.comments).filter(([, c]) => c.taskId !== id)
+          );
+          const ui = s.ui.selectedTaskId === id
+            ? { ...s.ui, selectedTaskId: null, modalOpen: null as typeof s.ui.modalOpen }
+            : s.ui;
+          return { tasks, timeLogs, sessions, comments, ui };
         });
-        // If the deleted task was being logged, resume unlogged
         if (wasActive) get().startTimeLog(null);
+      },
+
+      scheduleTask: (taskId, startTime, durationMs) => {
+        const id = nanoid();
+        const session: Session = {
+          id,
+          taskId,
+          startTime,
+          durationMs,
+          createdAt: Date.now(),
+        };
+        set((s) => ({ sessions: { ...s.sessions, [id]: session } }));
+        return id;
+      },
+
+      updateSession: (id, patch) => {
+        set((s) => ({
+          sessions: { ...s.sessions, [id]: { ...s.sessions[id], ...patch } },
+        }));
+      },
+
+      unscheduleSession: (id) => {
+        set((s) => {
+          const { [id]: _, ...sessions } = s.sessions;
+          return { sessions };
+        });
       },
 
       startTimeLog: (taskId, kind) => {
         const resolvedKind: TimeLogKind = kind ?? (taskId !== null ? 'task' : 'unlogged');
-        // Stop whatever is currently running
         const current = Object.values(get().timeLogs).find((l) => l.endTime === null);
         if (current) {
-          // If clicking the same non-task kind that's already active, treat as a toggle → go unlogged
           if (current.kind === resolvedKind && resolvedKind !== 'task' && resolvedKind !== 'unlogged') {
             set((s) => ({
               timeLogs: { ...s.timeLogs, [current.id]: { ...current, endTime: Date.now() } },
@@ -190,7 +234,6 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({
           timeLogs: { ...s.timeLogs, [current.id]: { ...current, endTime: Date.now() } },
         }));
-        // Always resume unlogged after stopping a task
         if (current.kind === 'task') get().startTimeLog(null);
       },
 
@@ -216,11 +259,10 @@ export const useAppStore = create<AppStore>()(
         set((s) => ({ ui: { ...s.ui, scrollOffsetPx: px } }));
       },
 
-      setZoom: (pxPerMs, cursorViewportX = 0) => {
+      setZoom: (pxPerMs, cursorViewportOffset = 0) => {
         const { ui } = get();
-        // Keep cursor time fixed
-        const cursorTime = ui.anchorTime + (cursorViewportX + ui.scrollOffsetPx) / ui.pxPerMs;
-        const newScrollOffset = (cursorTime - ui.anchorTime) * pxPerMs - cursorViewportX;
+        const cursorTime = ui.anchorTime + (cursorViewportOffset + ui.scrollOffsetPx) / ui.pxPerMs;
+        const newScrollOffset = (cursorTime - ui.anchorTime) * pxPerMs - cursorViewportOffset;
         set((s) => ({ ui: { ...s.ui, pxPerMs, scrollOffsetPx: newScrollOffset } }));
       },
 
@@ -236,33 +278,6 @@ export const useAppStore = create<AppStore>()(
 
       setPanelDrag: (drag) => set({ panelDrag: drag }),
 
-      createRecurringTask: (patch = {}) => {
-        const id = nanoid();
-        const task: RecurringTask = {
-          id,
-          title: 'New Template',
-          color: randomColor(),
-          defaultDurationMs: get().settings.defaultTaskDurationMs,
-          createdAt: Date.now(),
-          ...patch,
-        };
-        set((s) => ({ recurringTasks: { ...s.recurringTasks, [id]: task } }));
-        return id;
-      },
-
-      updateRecurringTask: (id, patch) => {
-        set((s) => ({
-          recurringTasks: { ...s.recurringTasks, [id]: { ...s.recurringTasks[id], ...patch } },
-        }));
-      },
-
-      deleteRecurringTask: (id) => {
-        set((s) => {
-          const { [id]: _, ...rest } = s.recurringTasks;
-          return { recurringTasks: rest };
-        });
-      },
-
       setDragPreview: (preview) => set({ dragPreview: preview }),
 
       commitDragPreview: () => {
@@ -273,8 +288,29 @@ export const useAppStore = create<AppStore>()(
           5 * 60 * 1000,
           snapTime(dragPreview.currentDurationMs, settings.snapInterval)
         );
-        get().updateTask(dragPreview.taskId, { startTime, durationMs });
+        get().updateSession(dragPreview.sessionId, { startTime, durationMs });
         set({ dragPreview: null });
+      },
+
+      addComment: (taskId, body) => {
+        const id = nanoid();
+        const now = Date.now();
+        const comment: Comment = { id, taskId, body, createdAt: now, updatedAt: now };
+        set((s) => ({ comments: { ...s.comments, [id]: comment } }));
+        return id;
+      },
+
+      updateComment: (id, body) => {
+        set((s) => ({
+          comments: { ...s.comments, [id]: { ...s.comments[id], body, updatedAt: Date.now() } },
+        }));
+      },
+
+      deleteComment: (id) => {
+        set((s) => {
+          const { [id]: _, ...rest } = s.comments;
+          return { comments: rest };
+        });
       },
 
       updateSettings: (patch) => {
@@ -283,10 +319,37 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: 'annas-list-store',
+      version: 2,
+      migrate: (persisted: unknown, fromVersion: number) => {
+        const state = persisted as Record<string, unknown>;
+        if (fromVersion < 2) {
+          // Migrate old tasks (had startTime/durationMs) into tasks + sessions
+          const oldTasks = (state.tasks ?? {}) as Record<string, Record<string, unknown>>;
+          const newTasks: Record<string, unknown> = {};
+          const newSessions: Record<string, unknown> = {};
+          for (const [id, t] of Object.entries(oldTasks)) {
+            const { startTime, durationMs, tags, ...rest } = t;
+            newTasks[id] = { ...rest, done: false, tags: tags ?? [] };
+            if (typeof startTime === 'number' && typeof durationMs === 'number') {
+              const sid = Math.random().toString(36).slice(2, 10);
+              newSessions[sid] = { id: sid, taskId: id, startTime, durationMs, createdAt: Date.now() };
+            }
+          }
+          // Migrate settings
+          const oldSettings = (state.settings ?? {}) as Record<string, unknown>;
+          const newSettings = {
+            snapInterval: oldSettings.snapInterval ?? '15min',
+            defaultSessionDurationMs: oldSettings.defaultTaskDurationMs ?? 60 * 60 * 1000,
+          };
+          return { ...state, tasks: newTasks, sessions: newSessions, settings: newSettings };
+        }
+        return state;
+      },
       partialize: (s) => ({
         tasks: s.tasks,
+        sessions: s.sessions,
         timeLogs: s.timeLogs,
-        recurringTasks: s.recurringTasks,
+        comments: s.comments,
         settings: s.settings,
       }),
     }
