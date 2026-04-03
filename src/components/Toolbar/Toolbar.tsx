@@ -139,7 +139,7 @@ export function Toolbar({ panelOpen, onTogglePanel, sidebarOpen, onToggleSidebar
             <line x1="5" y1="1" x2="5" y2="15"/>
           </svg>
         </button>
-        <span className={styles.logo}>Chronos</span>
+        <span className={styles.logo}>Anna's List</span>
       </div>
 
       <div className={styles.center}>
